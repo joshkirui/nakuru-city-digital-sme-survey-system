@@ -8,7 +8,8 @@ Run locally:
     python app.py
 
 Environment variables:
-    MSME_DB              path to the SQLite database (default: data/survey.db)
+    MSME_DB              path to the SQLite database (default: data/survey.db;
+                         on Vercel: a temporary file, demo only)
     MSME_ADMIN_PASSWORD  password for /admin (default: nakuru2026)
     MSME_SECRET          Flask session secret (default: generated in data/)
     PORT                 port for the development server (default: 8000)
@@ -23,6 +24,8 @@ import math
 import os
 import secrets
 import sqlite3
+import sys
+import tempfile
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -70,14 +73,51 @@ def load_secret() -> str:
         value = secrets.token_hex(32)
         path.write_text(value, encoding="utf-8")
         return value
-    except OSError:
+    except OSError as error:
+        # A read-only bundle (for example a serverless platform) cannot persist
+        # the key, so each instance would sign cookies with a different secret.
+        if os.environ.get("VERCEL") and not env:
+            print(
+                "warning: MSME_SECRET is not set and the secret file is not "
+                f"writable ({error}). Sign-in will fail intermittently across "
+                "serverless instances. Set MSME_SECRET in the project's "
+                "environment variables.",
+                file=sys.stderr,
+            )
         return secrets.token_hex(32)
+
+
+def runtime_db_path() -> Path:
+    """Choose where the SQLite file lives.
+
+    Serverless platforms mount the deployment bundle read-only and give each
+    instance a private temporary directory, so a database written there is
+    disposable. That is acceptable for a preview, never for fieldwork.
+    """
+    configured = os.environ.get("MSME_DB")
+    if configured:
+        return Path(configured)
+    if os.environ.get("VERCEL"):
+        return Path(tempfile.gettempdir()) / "survey.db"
+    return BASE / "data" / "survey.db"
+
+
+def ensure_parent(path: Path) -> None:
+    """Create the database directory, tolerating a read-only filesystem."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        print(
+            f"warning: cannot create {path.parent} ({error}); "
+            "the database path must be writable.",
+            file=sys.stderr,
+        )
 
 
 def create_app(config: dict | None = None) -> Flask:
     app = Flask(__name__)
-    default_db = Path(os.environ.get("MSME_DB", BASE / "data" / "survey.db"))
-    default_db.parent.mkdir(parents=True, exist_ok=True)
+    default_db = runtime_db_path()
+    ensure_parent(default_db)
 
     app.config.update(
         SECRET_KEY=load_secret(),
@@ -86,6 +126,8 @@ def create_app(config: dict | None = None) -> Flask:
         MAX_CONTENT_LENGTH=2 * 1024 * 1024,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
+        # Vercel serves every deployment over HTTPS.
+        SESSION_COOKIE_SECURE=bool(os.environ.get("VERCEL")),
         SEND_FILE_MAX_AGE_DEFAULT=3600,
         TARGET=384,
         DISTRIBUTED=430,

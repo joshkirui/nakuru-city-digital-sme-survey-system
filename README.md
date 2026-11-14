@@ -218,6 +218,32 @@ The development server is suitable for a pilot and for the demonstration. For re
 SQLite is adequate for a survey of a few hundred responses. It allows one writer at a time, which
 is not a constraint at this volume.
 
+### Vercel or another serverless platform (preview only)
+
+The repository includes `vercel.json` and `api/index.py` so the app can be deployed as a single
+Python function for a demonstration. Two properties of serverless platforms mean this is **not**
+suitable for collecting real responses:
+
+- **The bundle is read-only.** The app cannot create `data/`, so it falls back to
+  `MSME_DB=<temporary directory>/survey.db` when it detects `VERCEL`. Anything written there is
+  discarded when the instance is recycled.
+- **Every instance is isolated.** Requests may reach different instances, each with its own empty
+  database, so responses appear and disappear. Counts in the dashboard will not add up.
+
+To deploy the preview:
+
+1. Import the repository at the repository root (Root Directory = `.`).
+2. Set `MSME_SECRET` to a long random string in **Settings → Environment Variables**. Without it,
+   each instance signs session cookies with a different key and researcher sign-in fails
+   intermittently. Set `MSME_ADMIN_PASSWORD` too.
+3. Accept that the questionnaire and dashboard reset. Use it to show the interface, not to gather
+   data.
+
+For real fieldwork, host where the filesystem persists: a VPS with `waitress` behind nginx or
+Caddy, or a managed container service with a mounted volume. If serverless is a hard requirement,
+the data layer has to move to a network database (for example PostgreSQL on Neon or Supabase),
+which means replacing the `sqlite3` calls with a driver that speaks that database's SQL.
+
 ---
 
 ## 9. Files
@@ -230,6 +256,8 @@ seed_demo.py         synthetic demo data in a separate database
 smoke_test.py        end-to-end test, 33 checks
 requirements.txt
 run_demo.ps1         launch the app against data/demo.db
+api/index.py         Vercel entrypoint (preview only; see section 8)
+vercel.json          Vercel routing and bundle configuration
 templates/           base, survey, thanks, login, dashboard, responses, detail, error
 static/              offline CSS, progress script, favicon
 screenshots/         dashboard.png and survey.png captured from the demo data
@@ -264,6 +292,8 @@ with an empty live database. There is no build step and no CDN dependency.
 - There is no email or SMS reminder system and no respondent login, by design (anonymity).
 - The open-ended text is not coded automatically; export it and code themes manually.
 - The system assumes a purely quantitative design, as specified in Chapter Three.
+- Serverless hosting (Vercel, Netlify, Cloud Functions) cannot persist SQLite data; the included
+  Vercel configuration is for previews only. See section 8.
 
 ---
 
@@ -273,6 +303,8 @@ with an empty live database. There is no build step and no CDN dependency.
 | --- | --- |
 | `ModuleNotFoundError: flask` | `pip install -r requirements.txt` |
 | Dashboard shows 0 responses | You are probably on the live database; run `seed_demo.py` and `run_demo.ps1`, or submit through `/survey` |
+| Vercel returns `FUNCTION_INVOCATION_FAILED` | Check **Logs** for the Python traceback. On Vercel the app must write to `/tmp`; set `MSME_SECRET`; see section 8 |
+| Responses vanish on Vercel | Expected: serverless instances are ephemeral. Collect on a host with a persistent disk |
 | `Port 8000 already in use` | Set `$env:PORT = "8001"` before `python app.py` |
 | Forgot the admin password | Restart with `$env:MSME_ADMIN_PASSWORD = "new-password"` |
 | Signed out unexpectedly | Admin sessions expire after 30 minutes of inactivity |

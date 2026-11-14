@@ -190,6 +190,10 @@ Privacy design:
 Back up the database by copying `survey.db` (and `survey.db-wal` if present) while the server is
 stopped, or use SQLite's `.backup` command. Do not publish the `data/` folder.
 
+`.gitignore` excludes `data/`, generated exports (`nakuru_*.csv`, `nakuru_analysis.sps`), Python
+caches, virtual environments and local secrets (`.env`, `.secret_key`), so response data cannot
+be committed to the repository by accident.
+
 ---
 
 ## 8. Deployment notes

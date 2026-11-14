@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ message }} &middot; Nakuru SME E-Commerce Survey{% endblock %}
+
+{% block content %}
+<div class="narrow">
+  <div class="card">
+    <p class="eyebrow">Something went wrong</p>
+    <h1>{{ message }}</h1>
+    <p class="muted">You can return to the questionnaire or sign in again if you were working in the dashboard.</p>
+    <div class="actions">
+      <a class="btn primary" href="{{ url_for('survey') }}">Go to the questionnaire</a>
+      <a class="btn" href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

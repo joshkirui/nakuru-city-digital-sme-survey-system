@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Responses &middot; Nakuru SME E-Commerce Survey{% endblock %}
+{% block nav %}{% include "_adminnav.html" %}{% endblock %}
+
+{% block content %}
+<div class="pagehead admin-head">
+  <div>
+    <p class="eyebrow">Response register</p>
+    <h1>All responses</h1>
+    <p class="muted">{{ total }} record{{ '' if total == 1 else 's' }} match the current filter. Records carry a code only.</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('export_csv') }}">Download CSV</a>
+    <a class="btn" href="{{ url_for('export_labels') }}">Labelled CSV</a>
+  </div>
+</div>
+
+<form class="card filter" method="get" action="{{ url_for('admin_responses') }}">
+  <div class="field">
+    <label for="q">Response code</label>
+    <input type="search" id="q" name="q" value="{{ needle }}" placeholder="NK-0001">
+  </div>
+  <div class="field">
+    <label for="sector">Sector</label>
+    <select id="sector" name="sector">
+      <option value="">All sectors</option>
+      {% for code, label in sectors.items() %}
+      <option value="{{ code }}" {% if sector == code %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="filter-actions">
+    <button class="btn primary" type="submit">Apply</button>
+    {% if sector or needle %}<a class="btn" href="{{ url_for('admin_responses') }}">Clear</a>{% endif %}
+  </div>
+</form>
+
+<div class="card">
+  {% if rows %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th><th>Submitted (EAT)</th><th>Sector</th><th>Location</th>
+          <th>Channels</th><th class="right">Y</th><th class="right">Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td><a href="{{ url_for('admin_response', code=row.code) }}">{{ row.code }}</a></td>
+          <td>{{ row.created_at|dt }}</td>
+          <td>{{ row.sector }}</td>
+          <td>{{ row.location }}</td>
+          <td>{% for channel in row.channels %}<span class="chip">{{ channel }}</span>{% endfor %}</td>
+          <td class="right">{{ row.y|num(2) }}</td>
+          <td class="right">{{ row.duration|duration }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <nav class="pager" aria-label="Pages">
+    {% if page > 1 %}
+      <a class="btn" href="{{ url_for('admin_responses', page=page-1, sector=sector, q=needle) }}">&larr; Previous</a>
+    {% else %}
+      <span class="btn disabled">&larr; Previous</span>
+    {% endif %}
+    <span class="muted">Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}
+      <a class="btn" href="{{ url_for('admin_responses', page=page+1, sector=sector, q=needle) }}">Next &rarr;</a>
+    {% else %}
+      <span class="btn disabled">Next &rarr;</span>
+    {% endif %}
+  </nav>
+  {% else %}
+  <p class="empty">No responses match this filter.</p>
+  {% endif %}
+</div>
+{% endblock %}

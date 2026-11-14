@@ -1,0 +1,395 @@
+{% extends "base.html" %}
+{% block title %}Dashboard &middot; Nakuru SME E-Commerce Survey{% endblock %}
+{% block nav %}{% include "_adminnav.html" %}{% endblock %}
+
+{% block content %}
+<div class="pagehead admin-head">
+  <div>
+    <p class="eyebrow">Fieldwork dashboard</p>
+    <h1>Response monitoring</h1>
+    <p class="muted">
+      Target {{ d.target }} valid responses, {{ d.distributed }} questionnaires planned for distribution.
+      {% if d.first %}First response {{ d.first }}; latest {{ d.last }} (EAT).{% endif %}
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('export_csv') }}">Download CSV</a>
+    <a class="btn primary" href="{{ url_for('survey') }}">Open questionnaire</a>
+  </div>
+</div>
+
+{% if d.total == 0 %}
+<div class="card callout info">
+  <h2>No responses yet</h2>
+  <p>Share the questionnaire link with respondents, or load realistic demo data to preview the analysis.</p>
+  <pre><code>python seed_demo.py</code></pre>
+  <p class="hint">The demo script writes to <code>data/demo.db</code> and leaves the live database untouched.</p>
+</div>
+{% endif %}
+
+<section class="kpis" aria-label="Key figures">
+  <div class="kpi">
+    <span>Collected</span>
+    <strong>{{ d.total }}</strong>
+    <small>of {{ d.target }} valid responses</small>
+  </div>
+  <div class="kpi">
+    <span>Sample progress</span>
+    <strong>{{ d.pct|num(1) }}%</strong>
+    <small>{{ d.remaining }} still needed</small>
+  </div>
+  <div class="kpi">
+    <span>Response rate</span>
+    <strong>{{ d.response_rate|num(1) }}%</strong>
+    <small>of {{ d.distributed }} distributed</small>
+  </div>
+  <div class="kpi">
+    <span>Complete cases</span>
+    <strong>{{ d.valid }}</strong>
+    <small>{{ d.complete_pct|num(1) }}% with every item answered</small>
+  </div>
+  <div class="kpi">
+    <span>Mean completion</span>
+    <strong>{{ d.mean_minutes|num(1) }}</strong>
+    <small>minutes per questionnaire</small>
+  </div>
+  <div class="kpi">
+    <span>Open comments</span>
+    <strong>{{ d.comments }}</strong>
+    <small>responses with qualitative notes</small>
+  </div>
+</section>
+
+<div class="card">
+  <div class="cardhead">
+    <h2>Progress towards the Cochran sample</h2>
+    <span class="pill">{{ d.total }} / {{ d.target }}</span>
+  </div>
+  <div class="progress big"><span style="width: {{ d.pct|num(1) }}%"></span></div>
+  <p class="hint">
+    Cochran's formula with p = 0.5 and e = 0.05 gives 384. Non-response is absorbed by distributing 430 questionnaires.
+  </p>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <div class="cardhead"><h2>Sector</h2><span class="pill">{{ d.total }} responses</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Sector</th><th class="right">n</th><th class="right">%</th><th>Share</th></tr></thead>
+        <tbody>
+          {% for row in d.composition.sector %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="right">{{ row.n }}</td>
+            <td class="right">{{ row.pct|num(1) }}</td>
+            <td><div class="meter"><span style="width: {{ row.pct|num(1) }}%"></span></div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="cardhead"><h2>Location</h2></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Area</th><th class="right">n</th><th class="right">%</th><th>Share</th></tr></thead>
+        <tbody>
+          {% for row in d.composition.location %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="right">{{ row.n }}</td>
+            <td class="right">{{ row.pct|num(1) }}</td>
+            <td><div class="meter"><span style="width: {{ row.pct|num(1) }}%"></span></div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <div class="cardhead"><h2>E-commerce channels used</h2><span class="pill">multiple choice</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Channel</th><th class="right">n</th><th class="right">%</th><th>Share</th></tr></thead>
+        <tbody>
+          {% for row in d.channels %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="right">{{ row.n }}</td>
+            <td class="right">{{ row.pct|num(1) }}</td>
+            <td><div class="meter"><span style="width: {{ row.pct|num(1) }}%"></span></div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="cardhead"><h2>Business profile</h2></div>
+    <div class="table-wrap">
+      <table class="compact">
+        <thead><tr><th>Group</th><th>Category</th><th class="right">n</th><th class="right">%</th></tr></thead>
+        <tbody>
+          {% for row in d.composition.years %}
+          <tr><td>{{ 'Years trading' if loop.first else '' }}</td><td>{{ row.label }}</td><td class="right">{{ row.n }}</td><td class="right">{{ row.pct|num(1) }}</td></tr>
+          {% endfor %}
+          {% for row in d.composition.employees %}
+          <tr><td>{{ 'Employees' if loop.first else '' }}</td><td>{{ row.label }}</td><td class="right">{{ row.n }}</td><td class="right">{{ row.pct|num(1) }}</td></tr>
+          {% endfor %}
+          {% for row in d.composition.role %}
+          <tr><td>{{ 'Respondent' if loop.first else '' }}</td><td>{{ row.label }}</td><td class="right">{{ row.n }}</td><td class="right">{{ row.pct|num(1) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="cardhead">
+    <h2>Construct scores and reliability</h2>
+    <span class="pill">1 = low, 5 = high</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Variable</th><th class="right">Items</th><th class="right">n</th><th class="right">Mean</th><th class="right">SD</th><th class="right">Cronbach &alpha;</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for row in d.constructs %}
+        <tr>
+          <td><strong>{{ row.label }}</strong> <span class="muted">({{ row.key }})</span></td>
+          <td class="right">{{ row.items }}</td>
+          <td class="right">{{ row.n }}</td>
+          <td class="right">{{ row.mean|num(2) }}</td>
+          <td class="right">{{ row.sd|num(2) }}</td>
+          <td class="right">{{ row.alpha|num(3) }}</td>
+          <td>
+            {% if row.alpha is none %}
+              <span class="tag muted">not enough data</span>
+            {% elif row.alpha >= d.alpha_level %}
+              <span class="tag ok">acceptable</span>
+            {% elif row.alpha >= 0.60 %}
+              <span class="tag warn">marginal</span>
+            {% else %}
+              <span class="tag bad">below 0.70</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">Alpha is estimated on responses that answered every item in the construct. The 0.70 threshold follows Chapter 3.</p>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <div class="cardhead"><h2>Correlations</h2><span class="pill">Pearson, n = {{ d.correlations.n if d.correlations else 0 }}</span></div>
+    {% if d.correlations %}
+    <div class="table-wrap">
+      <table class="corr">
+        <thead>
+          <tr>
+            <th></th>
+            {% for key in d.correlations.variables %}<th class="right" title="{{ d.correlations.labels[key] }}">{{ key }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in d.correlations.rows %}
+          <tr>
+            <th title="{{ d.correlations.labels[row.key] }}">{{ row.key }}</th>
+            {% for cell in row.cells %}<td class="right">{{ cell|num(2) }}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">X1 online stores, X2 social commerce, X3 digital payments, Y performance.</p>
+    {% else %}
+    <p class="empty">At least three complete responses are needed to compute correlations.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="cardhead"><h2>Challenge groups (TOE)</h2></div>
+    {% if d.challenge_groups %}
+    <div class="toe">
+      {% for group in d.challenge_groups %}
+      <div class="toe-item">
+        <span>{{ group.name }}</span>
+        <strong>{{ group.mean|num(2) }}</strong>
+        <small>SD {{ group.sd|num(2) }} &middot; n = {{ group.n }}</small>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="hint">Mean agreement that the items in each group are a challenge (1 = strongly disagree, 5 = strongly agree).</p>
+    {% else %}
+    <p class="empty">No challenge data yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="cardhead">
+    <h2>Preliminary regression</h2>
+    <span class="pill">Y = &beta;<sub>0</sub> + &beta;<sub>1</sub>X<sub>1</sub> + &beta;<sub>2</sub>X<sub>2</sub> + &beta;<sub>3</sub>X<sub>3</sub> + &epsilon;</span>
+  </div>
+  {% if d.regression %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Predictor</th><th class="right">B</th><th class="right">SE</th><th class="right">t</th><th class="right">p</th><th>Sig.</th></tr></thead>
+      <tbody>
+        {% for term in d.regression.terms %}
+        <tr>
+          <td>{{ term.label }}</td>
+          <td class="right">{{ term.b|num(3) }}</td>
+          <td class="right">{{ term.se|num(3) }}</td>
+          <td class="right">{{ term.t|num(2) }}</td>
+          <td class="right">{{ term.p|pval }}</td>
+          <td>{{ term.stars }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="modelstats">
+    <span>n = <strong>{{ d.regression.n }}</strong></span>
+    <span>R&sup2; = <strong>{{ d.regression.r2|num(3) }}</strong></span>
+    <span>Adjusted R&sup2; = <strong>{{ d.regression.adj_r2|num(3) }}</strong></span>
+    <span>F = <strong>{{ d.regression.f|num(2) }}</strong></span>
+    <span>{{ d.regression.f_p|pstat }}</span>
+  </div>
+  <p class="hint">
+    Ordinary least squares with listwise deletion. * p &lt; .05, ** p &lt; .01, *** p &lt; .001.
+    This is a monitoring estimate; test normality, homoscedasticity, multicollinearity (VIF) and Durbin&ndash;Watson in SPSS before reporting.
+  </p>
+  {% else %}
+  <p class="empty">At least six complete responses are needed before the model can be estimated.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="cardhead">
+    <h2>Top challenges reported</h2>
+    <a class="link" href="{{ url_for('export_csv') }}">Export data</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Item</th><th>Challenge</th><th class="right">Mean</th><th class="right">SD</th><th>Severity</th></tr></thead>
+      <tbody>
+        {% for row in d.challenges[:5] %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="mono">{{ row.code }}</td>
+          <td>{{ row.text }}</td>
+          <td class="right">{{ row.mean|num(2) }}</td>
+          <td class="right">{{ row.sd|num(2) }}</td>
+          <td><div class="meter"><span style="width: {{ (row.mean or 0) * 20 }}%"></span></div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <details class="more">
+    <summary>All ten challenge items</summary>
+    <div class="table-wrap">
+      <table class="compact">
+        <thead><tr><th>Item</th><th>Challenge</th><th class="right">n</th><th class="right">Mean</th><th class="right">SD</th></tr></thead>
+        <tbody>
+          {% for row in d.challenges %}
+          <tr><td class="mono">{{ row.code }}</td><td>{{ row.text }}</td><td class="right">{{ row.n }}</td><td class="right">{{ row.mean|num(2) }}</td><td class="right">{{ row.sd|num(2) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</div>
+
+<div class="card">
+  <div class="cardhead"><h2>Responses in the last 14 days</h2></div>
+  <div class="spark">
+    {% for day in d.daily %}
+    <div class="spark-day" title="{{ day.label }}: {{ day.n }} response{{ '' if day.n == 1 else 's' }}">
+      <span class="spark-bar" style="height: {{ 6 + day.pct * 0.94 }}%"></span>
+      <span class="spark-value">{{ day.n }}</span>
+      <span class="spark-label">{{ day.label }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="cardhead">
+    <h2>Recent submissions</h2>
+    <a class="link" href="{{ url_for('admin_responses') }}">All responses</a>
+  </div>
+  {% if d.recent %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Submitted</th><th>Sector</th><th>Location</th><th>Channels</th><th class="right">Y</th><th class="right">Time</th></tr></thead>
+      <tbody>
+        {% for row in d.recent %}
+        <tr>
+          <td><a href="{{ url_for('admin_response', code=row.code) }}">{{ row.code }}</a></td>
+          <td>{{ row.created_at|dt }}</td>
+          <td>{{ row.sector }}</td>
+          <td>{{ row.location }}</td>
+          <td>{% for channel in row.channels %}<span class="chip">{{ channel }}</span>{% endfor %}</td>
+          <td class="right">{{ row.y|num(2) }}</td>
+          <td class="right">{{ row.duration|duration }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No submissions to show yet.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="cardhead"><h2>Item-level means</h2><span class="pill">descriptives</span></div>
+  {% for section in d.sections %}
+  <details class="more">
+    <summary>Section {{ section.id }} &middot; {{ section.title }}</summary>
+    <div class="table-wrap">
+      <table class="compact">
+        <thead><tr><th>Item</th><th>Statement</th><th class="right">n</th><th class="right">Mean</th><th class="right">SD</th></tr></thead>
+        <tbody>
+          {% for item in section['items'] %}
+          <tr>
+            <td class="mono">{{ item.code }}</td>
+            <td>{{ item.text }}</td>
+            <td class="right">{{ item.n }}</td>
+            <td class="right">{{ item.mean|num(2) }}</td>
+            <td class="right">{{ item.sd|num(2) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+
+<div class="card callout">
+  <h2>Data quality checks</h2>
+  <ul class="checks-list">
+    <li>{{ d.fast }} response{{ '' if d.fast == 1 else 's' }} completed in under three minutes &mdash; review before analysis.</li>
+    <li>{{ d.comments }} response{{ '' if d.comments == 1 else 's' }} include an open-ended comment for thematic coding.</li>
+    <li>Median completion time: {{ d.median_seconds|duration }}.</li>
+    <li>Every stored record passed server-side validation of consent, demographics and all {{ 36 }} Likert items.</li>
+  </ul>
+  <p class="hint">
+    Before reporting, export the CSV, run <code>nakuru_analysis.sps</code> in SPSS, and check the regression assumptions listed in Chapter 3.
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Questionnaire &middot; Nakuru SME E-Commerce Survey{% endblock %}
+
+{% block content %}
+<div class="pagehead">
+  <p class="eyebrow">Sections A&ndash;F &middot; about 12 minutes</p>
+  <h1>E-commerce and SME performance</h1>
+  <p class="lead">
+    This questionnaire is part of an academic research project on e-commerce and the
+    performance of small and medium enterprises in Nakuru County. It should be completed by
+    the owner, a manager, or an employee who is directly involved in running the business.
+  </p>
+</div>
+
+<div class="card progress-card">
+  <div class="progress-top">
+    <strong>Your progress</strong>
+    <span data-progress-text>0 of {{ total_fields }} answered</span>
+  </div>
+  <div class="progress" role="progressbar" aria-label="Questionnaire progress" aria-valuemin="0" aria-valuemax="100">
+    <span data-progress-bar style="width: 0%"></span>
+  </div>
+  <p class="hint">Nothing is submitted until you press <em>Submit responses</em> at the end.</p>
+  <div class="jump">
+    <a href="#section-A">A. Background</a>
+    {% for section in sections %}
+      <a href="#section-{{ section.id }}">{{ section.id }}. {{ section.title }}</a>
+    {% endfor %}
+    <a href="#section-open">Open question</a>
+  </div>
+</div>
+
+{% if errors %}
+<div class="card callout error-card" role="alert">
+  <h2>Please check {{ errors|length }} item{{ '' if errors|length == 1 else 's' }}</h2>
+  <ul>
+    {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('survey_submit') }}" data-survey data-total="{{ total_fields }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="duration_seconds" value="">
+
+  <section class="card" id="section-A" data-section>
+    <div class="cardhead">
+      <h2><span class="badge">A</span> About the business</h2>
+      <span class="tick" data-tick aria-hidden="true"></span>
+    </div>
+
+    <div class="consent{% if 'consent' in missing_fields %} missing{% endif %}">
+      <p class="consent-title">Information and consent</p>
+      <p>
+        Your participation is voluntary and you may stop at any time. Your answers are
+        anonymous: the questionnaire records a code only, not your name, your business name or
+        your phone number. The information will be combined with other responses and used only
+        for academic purposes.
+      </p>
+      <label class="check">
+        <input type="checkbox" name="consent" value="yes" required
+               {% if form.get('consent') == 'yes' %}checked{% endif %}>
+        <span>I have read the information above and I agree to take part in this study.</span>
+      </label>
+    </div>
+
+    <div class="fields">
+      {% for field in demographics %}
+      <div class="field{% if field.name in missing_fields %} missing{% endif %}">
+        <label for="f-{{ field.name }}">
+          {{ field.label }}{% if field.required %}<span class="req" aria-hidden="true">*</span>{% endif %}
+        </label>
+        <select id="f-{{ field.name }}" name="{{ field.name }}" required>
+          <option value="">Please choose&hellip;</option>
+          {% for value, label in field.options %}
+          <option value="{{ value }}" {% if form.get(field.name) == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="field{% if 'channels' in missing_fields %} missing{% endif %}">
+      <span class="label">
+        {{ channels_field.label }}<span class="req" aria-hidden="true">*</span>
+      </span>
+      <div class="checks">
+        {% for value, label in channels_field.options %}
+        <label class="check">
+          <input type="checkbox" name="channels" value="{{ value }}"
+                 {% if value in chosen_channels %}checked{% endif %}>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <p class="hint">Select every channel the business uses. The study is about businesses that use at least one.</p>
+    </div>
+  </section>
+
+  {% for section in sections %}
+  <section class="card" id="section-{{ section.id }}" data-section>
+    <div class="cardhead">
+      <h2><span class="badge">{{ section.id }}</span> {{ section.title }}</h2>
+      <span class="tick" data-tick aria-hidden="true"></span>
+    </div>
+    <p class="instruction">{{ section.instruction }}</p>
+    <div class="scale-key">
+      {% for value, label in section.scale %}
+      <span><b>{{ value }}</b> {{ label }}</span>
+      {% endfor %}
+    </div>
+
+    {% for code, text in section['items'] %}
+    <div class="q{% if code in missing_items %} missing{% endif %}">
+      <p class="qtext"><span class="code">{{ code }}</span>{{ text }}</p>
+      <div class="scale">
+        {% for value, label in section.scale %}
+        <label class="opt" title="{{ value }} &ndash; {{ label }}">
+          <input type="radio" name="{{ code }}" value="{{ value }}" required
+                 {% if form.get(code) == value %}checked{% endif %}>
+          <span class="num">{{ value }}</span>
+          <span class="txt">{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  <section class="card" id="section-open" data-section>
+    <div class="cardhead">
+      <h2>Final question</h2>
+    </div>
+    <div class="field{% if open_question.name in missing_fields %} missing{% endif %}">
+      <label for="open-question">{{ open_question.label }}</label>
+      <textarea id="open-question" name="{{ open_question.name }}" rows="4" maxlength="2000"
+                placeholder="For example: unreliable internet, high transaction charges, or low customer trust.">{{ form.get(open_question.name, '') }}</textarea>
+      <p class="hint">{{ open_question.hint }}</p>
+    </div>
+
+    <div class="submitbar">
+      <p class="hint">
+        Pressing submit saves your answers under an anonymous response code. You will see the
+        code on the next page; keep it if you later wish to withdraw your response.
+      </p>
+      <button class="btn primary" type="submit">Submit responses</button>
+    </div>
+  </section>
+</form>
+{% endblock %}

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Anonymous survey on e-commerce and the performance of small and medium enterprises in Nakuru County, Kenya.">
+  <title>{% block title %}Nakuru SME E-Commerce Survey{% endblock %}</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap bar">
+      <a class="brand" href="{{ url_for('survey') }}">
+        <span class="mark" aria-hidden="true">NK</span>
+        <span class="brandtext">
+          <strong>Nakuru SME E-Commerce Survey</strong>
+          <small>Research project &middot; Nakuru County, Kenya</small>
+        </span>
+      </a>
+      {% block nav %}{% endblock %}
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flashes" role="status">
+          {% for category, message in messages %}
+            <p class="flash {{ category }}">{{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap foot">
+      <p>
+        Anonymous academic study on e-commerce and SME performance.
+        No names, phone numbers or other personal identifiers are collected.
+        Data are handled in line with the Data Protection Act, 2019.
+      </p>
+      <p class="footlinks">
+        <a href="{{ url_for('survey') }}">Questionnaire</a>
+        <span aria-hidden="true">&middot;</span>
+        <a href="{{ url_for('admin_login') }}">Researcher sign in</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

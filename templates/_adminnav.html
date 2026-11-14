@@ -1,0 +1,12 @@
+<nav class="adminnav" aria-label="Researcher tools">
+  <a href="{{ url_for('admin_dashboard') }}" class="{{ 'on' if request.endpoint == 'admin_dashboard' else '' }}">Dashboard</a>
+  <a href="{{ url_for('admin_responses') }}" class="{{ 'on' if request.endpoint in ('admin_responses', 'admin_response') else '' }}">Responses</a>
+  <a href="{{ url_for('export_csv') }}">CSV</a>
+  <a href="{{ url_for('export_labels') }}">Labelled CSV</a>
+  <a href="{{ url_for('export_codebook') }}">Codebook</a>
+  <a href="{{ url_for('export_sps') }}">SPSS syntax</a>
+  <form method="post" action="{{ url_for('admin_logout') }}" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="linkbtn">Sign out</button>
+  </form>
+</nav>

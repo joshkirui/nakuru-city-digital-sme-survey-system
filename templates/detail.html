@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ r.code }} &middot; Response detail{% endblock %}
+{% block nav %}{% include "_adminnav.html" %}{% endblock %}
+
+{% block content %}
+<div class="pagehead admin-head">
+  <div>
+    <p class="eyebrow">Response record</p>
+    <h1>{{ r.code }}</h1>
+    <p class="muted">Submitted {{ r.created_at|dt }} (EAT). This record contains no personal identifiers.</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('admin_responses') }}">&larr; All responses</a>
+  </div>
+</div>
+
+<section class="kpis">
+  <div class="kpi"><span>Sector</span><strong class="small">{{ r.sector }}</strong></div>
+  <div class="kpi"><span>Location</span><strong class="small">{{ r.location }}</strong></div>
+  <div class="kpi"><span>Years trading</span><strong class="small">{{ r.years }}</strong></div>
+  <div class="kpi"><span>Employees</span><strong class="small">{{ r.employees }}</strong></div>
+  <div class="kpi"><span>Respondent</span><strong class="small">{{ r.role }}</strong></div>
+  <div class="kpi"><span>Duration</span><strong class="small">{{ r.duration_seconds|duration }}</strong></div>
+</section>
+
+<div class="card">
+  <div class="cardhead"><h2>E-commerce channels used</h2></div>
+  <p>
+    {% for channel in r.channels %}<span class="chip">{{ channel }}</span>{% else %}<span class="muted">None recorded</span>{% endfor %}
+  </p>
+</div>
+
+{% for section in sections %}
+<div class="card">
+  <div class="cardhead">
+    <h2><span class="badge">{{ section.id }}</span> {{ section.title }}</h2>
+  </div>
+  <div class="table-wrap">
+    <table class="answers">
+      <thead><tr><th>Item</th><th>Statement</th><th class="right">Score</th><th>Response</th></tr></thead>
+      <tbody>
+        {% for code, text in section['items'] %}
+        {% set value = r.answers.get(code) %}
+        <tr>
+          <td class="mono">{{ code }}</td>
+          <td>{{ text }}</td>
+          <td class="right">{{ value if value is not none else '-' }}</td>
+          <td>
+            {% if value is not none %}
+              {{ scale_maps[section.id].get(value|string, value) }}
+            {% else %}
+              <span class="muted">not answered</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+<div class="card">
+  <div class="cardhead"><h2>Open-ended response</h2></div>
+  {% if r.open_challenge %}
+  <blockquote class="quote">{{ r.open_challenge }}</blockquote>
+  {% else %}
+  <p class="empty">No comment was provided.</p>
+  {% endif %}
+  <p class="hint">Open replies are reported as themes, not attributed to individual businesses.</p>
+</div>
+{% endblock %}

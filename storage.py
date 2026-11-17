@@ -17,7 +17,7 @@ from __future__ import annotations
 import secrets
 import sqlite3
 from typing import Any, Mapping
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 try:  # psycopg is only required when DATABASE_URL is set
     import psycopg
@@ -94,11 +94,46 @@ CREATE INDEX IF NOT EXISTS idx_responses_created
 """
 
 
+# Parameters added by ORMs/poolers that libpq does not understand. Supabase's
+# dashboard sometimes includes them in the copied connection string.
+UNSUPPORTED_QUERY = {
+    "pgbouncer",
+    "connection_limit",
+    "pool_timeout",
+    "statement_cache_size",
+    "schema",
+}
+
+
 def normalise_url(url: str) -> str:
-    """Accept the ``postgres://`` form used by some providers."""
+    """Make a provider connection string safe for psycopg/libpq.
+
+    * Accepts the ``postgres://`` prefix used by some providers.
+    * Removes ORM/pooler-only query parameters such as ``pgbouncer=true``;
+      libpq rejects unknown parameters.
+    * Adds ``sslmode=require`` for Supabase hosts when it is missing.
+    """
+    if not url:
+        return ""
     if url.startswith("postgres://"):
-        return "postgresql://" + url[len("postgres://") :]
-    return url
+        url = "postgresql://" + url[len("postgres://") :]
+    try:
+        parts = urlsplit(url)
+        query = [
+            (key, value)
+            for key, value in parse_qsl(parts.query, keep_blank_values=True)
+            if key.lower() not in UNSUPPORTED_QUERY
+        ]
+        host = (parts.hostname or "").lower()
+        has_sslmode = any(key.lower() == "sslmode" for key, _ in query)
+        if "supabase." in host and not has_sslmode:
+            query.append(("sslmode", "require"))
+        return urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+        )
+    except ValueError:
+        # Let psycopg produce the detailed connection-string error.
+        return url
 
 
 def database_label(url: str) -> str:
@@ -150,6 +185,10 @@ class PostgresConnection:
             normalise_url(url),
             row_factory=dict_row,
             connect_timeout=10,
+            # Supabase's transaction pooler (port 6543) cannot keep named
+            # prepared statements between transactions. Disabling them is
+            # harmless on a direct/session connection and required here.
+            prepare_threshold=None,
         )
 
     def execute(self, sql: str, params: tuple = ()):

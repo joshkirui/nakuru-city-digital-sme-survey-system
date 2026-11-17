@@ -142,6 +142,32 @@ def test_postgres() -> None:
     check("postgres: label hides password", "secret" not in label, label)
     check("postgres: label names host", "host.example" in label, label)
 
+    supabase_pooler = (
+        "postgresql://postgres.project:secret@"
+        "aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
+        "?pgbouncer=true&sslmode=require"
+    )
+    cleaned = storage.normalise_url(supabase_pooler)
+    check(
+        "supabase: pgbouncer parameter removed",
+        "pgbouncer" not in cleaned,
+        cleaned,
+    )
+    check(
+        "supabase: sslmode preserved",
+        "sslmode=require" in cleaned,
+        cleaned,
+    )
+    no_ssl = storage.normalise_url(
+        "postgresql://postgres.project:secret@"
+        "aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
+    )
+    check(
+        "supabase: sslmode added when missing",
+        "sslmode=require" in no_ssl,
+        no_ssl,
+    )
+
     conn = storage.PostgresConnection("postgres://u:p@host/db")
     check(
         "postgres: URL normalised before connect",
@@ -151,6 +177,11 @@ def test_postgres() -> None:
     check(
         "postgres: connect timeout is set",
         state["kwargs"].get("connect_timeout") == 10,
+        str(state["kwargs"]),
+    )
+    check(
+        "postgres: prepared statements disabled",
+        state["kwargs"].get("prepare_threshold") is None,
         str(state["kwargs"]),
     )
 

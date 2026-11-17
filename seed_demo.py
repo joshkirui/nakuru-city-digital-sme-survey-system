@@ -141,6 +141,9 @@ def main() -> None:
 
     # The application reads its database path from the environment at import.
     os.environ["MSME_DB"] = str(db_path)
+    # Demo data is SQLite-only and must never be written to a production database.
+    os.environ.pop("DATABASE_URL", None)
+    os.environ.pop("POSTGRES_URL", None)
     os.environ.setdefault("MSME_ADMIN_PASSWORD", "nakuru2026")
 
     import app as survey  # noqa: E402  (import after environment is set)

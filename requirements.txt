@@ -1,3 +1,5 @@
 Flask>=3.0,<4
-# Optional production server (recommended for fieldwork):
+# PostgreSQL driver, used only when DATABASE_URL is set (Vercel/production).
+psycopg[binary]>=3.2,<4
+# Optional production server (recommended for fieldwork without Vercel):
 # waitress>=3.0,<4

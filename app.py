@@ -8,8 +8,10 @@ Run locally:
     python app.py
 
 Environment variables:
+    DATABASE_URL         PostgreSQL connection string; when set, PostgreSQL is
+                         used instead of SQLite (required on Vercel)
     MSME_DB              path to the SQLite database (default: data/survey.db;
-                         on Vercel: a temporary file, demo only)
+                         on Vercel without DATABASE_URL: a temporary file)
     MSME_ADMIN_PASSWORD  password for /admin (default: nakuru2026)
     MSME_SECRET          Flask session secret (default: generated in data/)
     PORT                 port for the development server (default: 8000)
@@ -23,7 +25,6 @@ import json
 import math
 import os
 import secrets
-import sqlite3
 import sys
 import tempfile
 import time
@@ -48,6 +49,7 @@ from flask import (
 
 import questions as q
 import stats
+import storage
 
 BASE = Path(__file__).resolve().parent
 # Kenya has no daylight saving, so a fixed offset avoids a dependency on the
@@ -133,8 +135,13 @@ def report_runtime(app: Flask) -> None:
 
     ``FUNCTION_INVOCATION_FAILED`` replaces the real traceback in the browser,
     so the useful evidence has to reach the platform's runtime logs. Never
-    print secret values, only where they came from.
+    print secret values or connection passwords, only their sources.
     """
+    backend = app.config.get("DB_BACKEND", "sqlite")
+    if backend == "postgres":
+        target = f"host={storage.database_label(app.config['DATABASE_URL'])}"
+    else:
+        target = f"db={app.config['DB_PATH']}"
     secret_source = "environment"
     if not os.environ.get("MSME_SECRET"):
         secret_file = BASE / "data" / ".secret_key"
@@ -145,11 +152,18 @@ def report_runtime(app: Flask) -> None:
     print(
         "msme startup: "
         f"platform={'vercel' if os.environ.get('VERCEL') else 'local'} "
-        f"db={app.config['DB_PATH']} "
+        f"backend={backend} {target} "
         f"secret={secret_source} "
         f"admin_password={password_source}",
         file=sys.stderr,
     )
+    if os.environ.get("VERCEL") and backend != "postgres":
+        print(
+            "warning: DATABASE_URL is not set; using a temporary SQLite "
+            "database. Responses will disappear when Vercel recycles the "
+            "instance. Set DATABASE_URL to a PostgreSQL connection string.",
+            file=sys.stderr,
+        )
     if os.environ.get("VERCEL") and password_source == "default":
         print(
             "warning: MSME_ADMIN_PASSWORD is not set; /admin is protected by "
@@ -161,18 +175,28 @@ def report_runtime(app: Flask) -> None:
 
 def create_app(config: dict | None = None) -> Flask:
     app = Flask(__name__)
-    default_db = runtime_db_path()
-    ensure_parent(default_db)
+    database_url = storage.normalise_url(
+        os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or ""
+    )
+    default_db = None
+    if not database_url:
+        default_db = runtime_db_path()
+        ensure_parent(default_db)
 
     app.config.update(
         SECRET_KEY=load_secret(),
         ADMIN_PASSWORD=os.environ.get("MSME_ADMIN_PASSWORD", DEFAULT_PASSWORD),
-        DB_PATH=str(default_db),
+        DATABASE_URL=database_url,
+        DB_BACKEND="postgres" if database_url else "sqlite",
+        DB_PATH=str(default_db) if default_db else "",
         MAX_CONTENT_LENGTH=2 * 1024 * 1024,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        # Vercel serves every deployment over HTTPS.
-        SESSION_COOKIE_SECURE=bool(os.environ.get("VERCEL")),
+        # Vercel serves every deployment over HTTPS. Set MSME_HTTPS=1 behind
+        # HTTPS on any other host.
+        SESSION_COOKIE_SECURE=bool(
+            os.environ.get("VERCEL") or os.environ.get("MSME_HTTPS")
+        ),
         SEND_FILE_MAX_AGE_DEFAULT=3600,
         TARGET=384,
         DISTRIBUTED=430,
@@ -181,6 +205,18 @@ def create_app(config: dict | None = None) -> Flask:
     if config:
         app.config.update(config)
 
+    app.config["DATABASE_URL"] = storage.normalise_url(
+        app.config.get("DATABASE_URL") or ""
+    )
+    if app.config["DATABASE_URL"]:
+        app.config["DB_BACKEND"] = "postgres"
+    else:
+        app.config["DB_BACKEND"] = "sqlite"
+        if not app.config.get("DB_PATH"):
+            path = runtime_db_path()
+            ensure_parent(path)
+            app.config["DB_PATH"] = str(path)
+
     app.teardown_appcontext(close_db)
     register_filters(app)
     register_routes(app)
@@ -188,16 +224,20 @@ def create_app(config: dict | None = None) -> Flask:
     app.jinja_env.globals["csrf_token"] = csrf_token
     app.jinja_env.globals["CHANNEL_LABELS"] = q.CHANNEL_LABELS
 
+    report_runtime(app)
+
     with app.app_context():
         init_db()
-
-    report_runtime(app)
 
     @app.cli.command("init-db")
     def init_db_command() -> None:
         """Create the database tables."""
         init_db()
-        print(f"initialised {current_app.config['DB_PATH']}")
+        if current_app.config["DB_BACKEND"] == "postgres":
+            label = storage.database_label(current_app.config["DATABASE_URL"])
+        else:
+            label = current_app.config["DB_PATH"]
+        print(f"initialised {label}")
 
     return app
 
@@ -205,13 +245,13 @@ def create_app(config: dict | None = None) -> Flask:
 # --------------------------------------------------------------------- database
 
 
-def get_db() -> sqlite3.Connection:
+def get_db():
     if "db" not in g:
-        conn = sqlite3.connect(current_app.config["DB_PATH"], timeout=15)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        g.db = conn
+        g.db = storage.connect(
+            current_app.config["DB_BACKEND"],
+            current_app.config["DB_PATH"],
+            current_app.config["DATABASE_URL"],
+        )
     return g.db
 
 
@@ -223,27 +263,7 @@ def close_db(_error=None) -> None:
 
 def init_db() -> None:
     conn = get_db()
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS responses (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            code             TEXT UNIQUE NOT NULL,
-            created_at       TEXT NOT NULL,
-            consent          INTEGER NOT NULL DEFAULT 0,
-            sector           TEXT NOT NULL,
-            years            TEXT NOT NULL,
-            employees        TEXT NOT NULL,
-            role             TEXT NOT NULL,
-            location         TEXT NOT NULL,
-            channels         TEXT NOT NULL,
-            answers          TEXT NOT NULL,
-            duration_seconds INTEGER,
-            open_challenge   TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_responses_created
-            ON responses (created_at);
-        """
-    )
+    storage.init_schema(conn)
     conn.commit()
 
 
@@ -924,7 +944,10 @@ def register_routes(app: Flask) -> None:
 
     @app.get("/health")
     def health():
-        return {"status": "ok", "responses": get_db().execute("SELECT COUNT(*) FROM responses").fetchone()[0]}
+        row = get_db().execute(
+            "SELECT COUNT(*) AS total FROM responses"
+        ).fetchone()
+        return {"status": "ok", "responses": row["total"]}
 
     @app.get("/robots.txt")
     def robots():
@@ -972,32 +995,26 @@ def register_routes(app: Flask) -> None:
         conn = get_db()
         created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         try:
-            cursor = conn.execute(
-                """
-                INSERT INTO responses
-                    (code, created_at, consent, sector, years, employees, role,
-                     location, channels, answers, duration_seconds, open_challenge)
-                VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    created_at,
-                    payload["consent"],
-                    payload["sector"],
-                    payload["years"],
-                    payload["employees"],
-                    payload["role"],
-                    payload["location"],
-                    json.dumps(payload["channels"]),
-                    json.dumps(payload["answers"], sort_keys=True),
-                    payload["duration_seconds"],
-                    payload["open_challenge"],
-                ),
+            response_id = storage.insert_response(
+                conn,
+                {
+                    "created_at": created_at,
+                    "consent": payload["consent"],
+                    "sector": payload["sector"],
+                    "years": payload["years"],
+                    "employees": payload["employees"],
+                    "role": payload["role"],
+                    "location": payload["location"],
+                    "channels": json.dumps(payload["channels"]),
+                    "answers": json.dumps(payload["answers"], sort_keys=True),
+                    "duration_seconds": payload["duration_seconds"],
+                    "open_challenge": payload["open_challenge"],
+                },
             )
-            response_id = cursor.lastrowid
             code = f"NK-{response_id:04d}"
-            conn.execute("UPDATE responses SET code = ? WHERE id = ?", (code, response_id))
+            storage.set_code(conn, response_id, code)
             conn.commit()
-        except sqlite3.Error:
+        except storage.StorageError:
             conn.rollback()
             current_app.logger.exception("could not store a survey response")
             return render_template("error.html", message="The response could not be saved. Please try again."), 500

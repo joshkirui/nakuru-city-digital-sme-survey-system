@@ -29,6 +29,10 @@ PASSWORD = "smoke-test-password"
 os.environ["MSME_DB"] = str(TMP / "smoke.db")
 os.environ["MSME_SECRET"] = "smoke-test-secret"
 os.environ["MSME_ADMIN_PASSWORD"] = PASSWORD
+# The smoke test always uses its own SQLite file, even if the developer's
+# shell happens to have a production DATABASE_URL exported.
+os.environ.pop("DATABASE_URL", None)
+os.environ.pop("POSTGRES_URL", None)
 
 import app as survey  # noqa: E402
 

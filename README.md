@@ -7,8 +7,8 @@ It collects the six-section questionnaire anonymously, stores responses under a 
 progress towards the 384-response Cochran sample, computes construct scores and a preliminary
 regression, and exports data that opens directly in SPSS.
 
-- **Stack:** Python 3.11+, Flask, SQLite. No internet connection is needed at runtime; all
-  styling and scripts are local.
+- **Stack:** Python 3.11+, Flask, SQLite locally and PostgreSQL in production. No internet
+  connection is needed at runtime for the interface; all styling and scripts are local.
 - **Respondents:** `/survey` (mobile-first, about 12 minutes).
 - **Researcher:** `/admin` (password-protected dashboard, response register, exports).
 
@@ -39,7 +39,12 @@ python app.py
 ```
 
 The Flask session secret is generated once and stored in `data/.secret_key`. Set
-`MSME_SECRET` to supply your own.
+`MSME_SECRET` to supply your own. For a persistent production database, set `DATABASE_URL` to a
+PostgreSQL connection string; otherwise the app uses SQLite. See section 8.
+
+`.env.example` documents the supported variables. The app reads them from the process
+environment; it does not load `.env` automatically, so set them in the shell or in the hosting
+dashboard.
 
 ---
 
@@ -70,12 +75,17 @@ python seed_demo.py --help
 
 ```powershell
 python smoke_test.py
+python storage_test.py
 ```
 
-The test starts the app on a free port with a temporary database and checks 33 behaviours:
+`smoke_test.py` starts the app on a free port with a temporary database and checks 33 behaviours:
 the questionnaire, validation, anonymous code generation, sign-in, dashboard, response register,
 detail view, CSV exports, codebook, SPSS syntax, health check, logout and 404 handling. It leaves
 no files behind.
+
+`storage_test.py` checks the database adapter: SQLite insert/read/count, plus a simulated
+PostgreSQL driver for placeholder translation, `RETURNING id`, schema dialect and connection
+normalisation. It needs no server and no PostgreSQL package.
 
 ---
 
@@ -160,7 +170,8 @@ same item definitions as the questionnaire, so it stays aligned if items are edi
 
 ## 7. Data model and privacy
 
-SQLite database at `system/data/survey.db` (override with `MSME_DB`).
+By default, a SQLite database at `system/data/survey.db` (override with `MSME_DB`). When
+`DATABASE_URL` is set, the same schema is created in PostgreSQL instead.
 
 ```
 responses
@@ -188,7 +199,8 @@ Privacy design:
   management plan.
 
 Back up the database by copying `survey.db` (and `survey.db-wal` if present) while the server is
-stopped, or use SQLite's `.backup` command. Do not publish the `data/` folder.
+stopped, or use SQLite's `.backup` command. On PostgreSQL, use the provider's automated backups or
+`pg_dump`. Do not publish the `data/` folder or a database connection string.
 
 `.gitignore` excludes `data/`, generated exports (`nakuru_*.csv`, `nakuru_analysis.sps`), Python
 caches, virtual environments and local secrets (`.env`, `.secret_key`), so response data cannot
@@ -198,7 +210,10 @@ be committed to the repository by accident.
 
 ## 8. Deployment notes
 
-The development server is suitable for a pilot and for the demonstration. For real fieldwork:
+### Local or a persistent-disk server
+
+The default storage is SQLite at `data/survey.db`. For a pilot, a demonstration, or a single
+machine that persists:
 
 1. Set a strong `MSME_ADMIN_PASSWORD` and, preferably, `MSME_SECRET`.
 2. Install a production server and serve behind HTTPS:
@@ -209,41 +224,56 @@ The development server is suitable for a pilot and for the demonstration. For re
    Put nginx, Caddy or IIS in front with a TLS certificate, and forward only to the app port.
 3. Restrict `/admin` at the proxy if the deployment is public (for example by IP allow-list or
    basic auth in addition to the app password).
-4. Set `SESSION_COOKIE_SECURE=True` when HTTPS is in use (edit `create_app` or add a config
-   override).
-5. Schedule backups and test restoring them.
+4. `SESSION_COOKIE_SECURE` is set automatically when `VERCEL` is present. On any other HTTPS host,
+   set `MSME_HTTPS=1`.
+5. Back up the database file (and its `-wal`/`-shm` siblings) on a schedule and test restoring.
 6. Keep the machine's clock correct; timestamps are stored in UTC and displayed in East Africa
    Time.
 
 SQLite is adequate for a survey of a few hundred responses. It allows one writer at a time, which
 is not a constraint at this volume.
 
-### Vercel or another serverless platform (preview only)
+### Vercel + PostgreSQL (recommended for fieldwork)
 
 Vercel detects Flask directly: it looks for a top-level `app` in `app.py`, `index.py`, `server.py`,
-`main.py`, `wsgi.py`, or `asgi.py`. This repository therefore needs no custom entrypoint and no
-rewrites; `vercel.json` only raises the function timeout. Two properties of serverless platforms
-mean this is **not** suitable for collecting real responses:
+`main.py`, `wsgi.py`, or `asgi.py`. No custom entrypoint and no rewrites are needed; `vercel.json`
+only raises the function timeout.
 
-- **The bundle is read-only.** The app cannot create `data/`, so it falls back to
-  `MSME_DB=<temporary directory>/survey.db` when it detects `VERCEL`. Anything written there is
-  discarded when the instance is recycled.
-- **Every instance is isolated.** Requests may reach different instances, each with its own empty
-  database, so responses appear and disappear. Counts in the dashboard will not add up.
+Vercel's filesystem is read-only apart from a private, per-instance `/tmp`, so SQLite there is
+disposable. The app therefore uses PostgreSQL whenever `DATABASE_URL` is set, and falls back to a
+temporary SQLite file only for a preview. Deploying without `DATABASE_URL` is allowed, but the
+startup log warns that responses will disappear.
 
-To deploy the preview:
+1. Create a free PostgreSQL database, for example [Neon](https://neon.tech) or
+   [Supabase](https://supabase.com). Copy the **pooled** connection string; it looks like
+   `postgresql://user:password@host/database?sslmode=require`.
+2. In Vercel, open **Project → Settings → Environment Variables** and set these for Production and
+   Preview:
+   - `DATABASE_URL` — the pooled PostgreSQL connection string.
+   - `MSME_SECRET` — 64 random hex characters. Without it each instance signs cookies with a
+     different key, and researcher sign-in fails intermittently.
+   - `MSME_ADMIN_PASSWORD` — a strong password; otherwise `/admin` uses the public demo password.
+3. Redeploy. Environment changes only apply to a new deployment.
+4. Open **Logs → Runtime Logs** and look for a line like
+   `msme startup: platform=vercel backend=postgres host=... secret=environment admin_password=environment`.
+5. Open `/health`; it should return `{"status":"ok","responses":0}`.
+6. Submit one test response, refresh `/health`, and confirm the count increments. Then sign in to
+   `/admin` and export the response to prove the round trip.
 
-1. Import the repository at the repository root (Root Directory = `.`).
-2. Set `MSME_SECRET` to a long random string in **Settings → Environment Variables**. Without it,
-   each instance signs session cookies with a different key and researcher sign-in fails
-   intermittently. Set `MSME_ADMIN_PASSWORD` too.
-3. Accept that the questionnaire and dashboard reset. Use it to show the interface, not to gather
-   data.
+The first request creates the `responses` table
+(`CREATE TABLE IF NOT EXISTS`), so no migration tool is required.
 
-For real fieldwork, host where the filesystem persists: a VPS with `waitress` behind nginx or
-Caddy, or a managed container service with a mounted volume. If serverless is a hard requirement,
-the data layer has to move to a network database (for example PostgreSQL on Neon or Supabase),
-which means replacing the `sqlite3` calls with a driver that speaks that database's SQL.
+#### Notes and limits
+
+- Use the provider's **pooled** connection string on Vercel. Serverless functions open short-lived
+  connections; pooling prevents exhausting the database's connection limit.
+- Keep `sslmode=require` (Neon and Supabase include it).
+- Free tiers are sufficient for 384 responses, but may suspend an idle project. Wake it before
+  fieldwork and check the provider's limits.
+- `DATABASE_URL` is honoured locally too, so the PostgreSQL path can be tested before deploying.
+  Leave it unset to keep using SQLite.
+- If you later host on a VPS with a persistent disk, SQLite remains supported and needs no
+  PostgreSQL account.
 
 ---
 
@@ -253,9 +283,12 @@ which means replacing the `sqlite3` calls with a driver that speaks that databas
 app.py               Flask app: routes, validation, dashboard, exports
 questions.py         single source of truth for items, scales and constructs
 stats.py             mean, SD, Cronbach alpha, Pearson, t/F p-values, OLS
+storage.py           SQLite/PostgreSQL adapter and schema
+storage_test.py      adapter tests (SQLite and simulated PostgreSQL)
 seed_demo.py         synthetic demo data in a separate database
 smoke_test.py        end-to-end test, 33 checks
 requirements.txt
+.env.example         documented environment variables (copy to .env locally)
 run_demo.ps1         launch the app against data/demo.db
 vercel.json          Vercel function timeout (Flask is auto-detected from app.py)
 templates/           base, survey, thanks, login, dashboard, responses, detail, error
@@ -292,8 +325,10 @@ with an empty live database. There is no build step and no CDN dependency.
 - There is no email or SMS reminder system and no respondent login, by design (anonymity).
 - The open-ended text is not coded automatically; export it and code themes manually.
 - The system assumes a purely quantitative design, as specified in Chapter Three.
-- Serverless hosting (Vercel, Netlify, Cloud Functions) cannot persist SQLite data; the included
-  Vercel configuration is for previews only. See section 8.
+- On Vercel, PostgreSQL is required: without `DATABASE_URL` the app uses a temporary SQLite file
+  and responses are lost when the instance is recycled. See section 8.
+- PostgreSQL adds a network dependency. If the database provider is unreachable, submissions fail
+  until it recovers; SQLite on a persistent disk has no such dependency.
 
 ---
 
@@ -302,9 +337,12 @@ with an empty live database. There is no build step and no CDN dependency.
 | Symptom | Fix |
 | --- | --- |
 | `ModuleNotFoundError: flask` | `pip install -r requirements.txt` |
+| `ModuleNotFoundError: psycopg` | `pip install -r requirements.txt` (needed when `DATABASE_URL` is set) |
 | Dashboard shows 0 responses | You are probably on the live database; run `seed_demo.py` and `run_demo.ps1`, or submit through `/survey` |
-| Vercel returns `FUNCTION_INVOCATION_FAILED` | Check **Logs** for the Python traceback. On Vercel the app must write to `/tmp`; set `MSME_SECRET`; see section 8 |
-| Responses vanish on Vercel | Expected: serverless instances are ephemeral. Collect on a host with a persistent disk |
+| Vercel returns `FUNCTION_INVOCATION_FAILED` | Open **Logs → Runtime Logs** and read the traceback. The `msme startup:` line shows the detected backend, database host and credential sources |
+| Responses vanish on Vercel | `DATABASE_URL` is not set, or the deployment predates it. Set it and redeploy; see section 8 |
+| `psycopg.OperationalError` on Vercel | Check the pooled connection string, `sslmode=require`, the database password and whether the provider suspended the project |
+| `too many connections` | Use the provider's **pooled** connection string, not the direct one |
 | `Port 8000 already in use` | Set `$env:PORT = "8001"` before `python app.py` |
 | Forgot the admin password | Restart with `$env:MSME_ADMIN_PASSWORD = "new-password"` |
 | Signed out unexpectedly | Admin sessions expire after 30 minutes of inactivity |

@@ -114,6 +114,37 @@ def ensure_parent(path: Path) -> None:
         )
 
 
+def report_runtime(app: Flask) -> None:
+    """Write one startup line so hosting logs show what the app detected.
+
+    ``FUNCTION_INVOCATION_FAILED`` replaces the real traceback in the browser,
+    so the useful evidence has to reach the platform's runtime logs. Never
+    print secret values, only where they came from.
+    """
+    secret_source = "environment"
+    if not os.environ.get("MSME_SECRET"):
+        secret_file = BASE / "data" / ".secret_key"
+        secret_source = "file" if secret_file.exists() else "generated-per-instance"
+    password_source = (
+        "environment" if os.environ.get("MSME_ADMIN_PASSWORD") else "default"
+    )
+    print(
+        "msme startup: "
+        f"platform={'vercel' if os.environ.get('VERCEL') else 'local'} "
+        f"db={app.config['DB_PATH']} "
+        f"secret={secret_source} "
+        f"admin_password={password_source}",
+        file=sys.stderr,
+    )
+    if os.environ.get("VERCEL") and password_source == "default":
+        print(
+            "warning: MSME_ADMIN_PASSWORD is not set; /admin is protected by "
+            "the public demo password. Set it in the project's environment "
+            "variables.",
+            file=sys.stderr,
+        )
+
+
 def create_app(config: dict | None = None) -> Flask:
     app = Flask(__name__)
     default_db = runtime_db_path()
@@ -145,6 +176,8 @@ def create_app(config: dict | None = None) -> Flask:
 
     with app.app_context():
         init_db()
+
+    report_runtime(app)
 
     @app.cli.command("init-db")
     def init_db_command() -> None:

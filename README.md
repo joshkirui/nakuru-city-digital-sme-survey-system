@@ -220,9 +220,10 @@ is not a constraint at this volume.
 
 ### Vercel or another serverless platform (preview only)
 
-The repository includes `vercel.json` and `api/index.py` so the app can be deployed as a single
-Python function for a demonstration. Two properties of serverless platforms mean this is **not**
-suitable for collecting real responses:
+Vercel detects Flask directly: it looks for a top-level `app` in `app.py`, `index.py`, `server.py`,
+`main.py`, `wsgi.py`, or `asgi.py`. This repository therefore needs no custom entrypoint and no
+rewrites; `vercel.json` only raises the function timeout. Two properties of serverless platforms
+mean this is **not** suitable for collecting real responses:
 
 - **The bundle is read-only.** The app cannot create `data/`, so it falls back to
   `MSME_DB=<temporary directory>/survey.db` when it detects `VERCEL`. Anything written there is
@@ -256,8 +257,7 @@ seed_demo.py         synthetic demo data in a separate database
 smoke_test.py        end-to-end test, 33 checks
 requirements.txt
 run_demo.ps1         launch the app against data/demo.db
-api/index.py         Vercel entrypoint (preview only; see section 8)
-vercel.json          Vercel routing and bundle configuration
+vercel.json          Vercel function timeout (Flask is auto-detected from app.py)
 templates/           base, survey, thanks, login, dashboard, responses, detail, error
 static/              offline CSS, progress script, favicon
 screenshots/         dashboard.png and survey.png captured from the demo data

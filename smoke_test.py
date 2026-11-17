@@ -22,6 +22,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from werkzeug.datastructures import MultiDict
+
 BASE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="msme-smoke-"))
 PASSWORD = "smoke-test-password"
@@ -95,6 +97,8 @@ def survey_payload(token: str, complete: bool = True) -> dict:
         "duration_seconds": "640",
         "open_challenge": "Internet is unreliable during the rainy season.",
         "channels": ["online_store", "social", "payments"],
+        "needs_software": "yes",
+        "software_details": "An online ordering page with M-Pesa checkout.",
     }
     import questions as q
 
@@ -120,12 +124,31 @@ def main() -> int:
     thread.start()
     print(f"Smoke test server: {BASE_URL}")
 
+    print("\nBranching question")
+    no_payload = survey_payload("branch-token")
+    no_payload["channels"] = "social"
+    no_payload["needs_software"] = "no"
+    no_payload["software_details"] = "This text must be ignored."
+    parsed, errors, missing = survey.parse_submission(MultiDict(no_payload))
+    check(
+        "No branch needs no details and discards them",
+        not errors
+        and parsed["needs_software"] == "no"
+        and parsed["software_details"] == "",
+        str(errors),
+    )
+
     try:
         print("\nPublic questionnaire")
         status, html, headers = fetch("/survey")
         check("GET /survey returns 200", status == 200, str(status))
         check("survey has consent checkbox", 'name="consent"' in html)
         check("survey has all challenge items", 'name="F10"' in html)
+        check("survey has software question", 'name="needs_software"' in html)
+        check(
+            "software details start hidden",
+            re.search(r'id="software-details"[^>]*hidden', html) is not None,
+        )
         check("CSP header present", "frame-ancestors" in headers.get("Content-Security-Policy", ""))
         token = token_from(html)
 
@@ -134,6 +157,18 @@ def main() -> int:
         with application.app_context():
             count = survey.get_db().execute("SELECT COUNT(*) FROM responses").fetchone()[0]
         check("invalid submission not stored", count == 0, f"count={count}")
+
+        missing_details = survey_payload(token)
+        missing_details["software_details"] = ""
+        status, html, _ = fetch("/survey", missing_details)
+        check(
+            "yes without software details rejected",
+            status == 200 and "describe the software" in html.lower(),
+            str(status),
+        )
+        with application.app_context():
+            count = survey.get_db().execute("SELECT COUNT(*) FROM responses").fetchone()[0]
+        check("incomplete software branch not stored", count == 0, f"count={count}")
 
         status, body, headers = fetch("/survey", survey_payload(token, complete=True))
         location = headers.get("Location", "")
@@ -169,22 +204,36 @@ def main() -> int:
             "dashboard counts the response",
             re.search(r"Collected</span>\s*<strong>1</strong>", html) is not None,
         )
+        check(
+            "dashboard shows the software request",
+            "Software requests" in html and "M-Pesa checkout" in html,
+        )
         admin_token = token_from(html)
 
         print("\nAdmin pages and exports")
         status, html, _ = fetch("/admin/responses")
         check("response register lists the record", status == 200 and "NK-0001" in html)
+        check("response register shows software column", "Software" in html)
 
         status, html, _ = fetch("/admin/responses/NK-0001")
         check("response detail loads", status == 200 and "Response record" in html)
         check("detail renders Likert labels", "Strongly agree" in html and "Increased" in html)
+        check(
+            "detail shows the software request",
+            "Software development request" in html and "M-Pesa checkout" in html,
+        )
 
         status, body, headers = fetch("/admin/export.csv")
         lines = [line for line in body.splitlines() if line]
         check("CSV export returns 200", status == 200, str(status))
         check("CSV has a header row", lines and lines[0].startswith("code,submitted_at"))
         check("CSV includes item columns", "B1" in lines[0] and "F10" in lines[0])
+        check(
+            "CSV includes the software columns",
+            "needs_software" in lines[0] and "software_details" in lines[0],
+        )
         check("CSV includes the submitted row", any("NK-0001" in line for line in lines))
+        check("CSV includes the software details", "M-Pesa checkout" in body)
         check("CSV has 36 item columns", all(f",{code}," in f",{lines[0]}," for code in
                                              [f"B{i}" for i in range(1, 7)] +
                                              [f"C{i}" for i in range(1, 7)] +
@@ -194,13 +243,19 @@ def main() -> int:
 
         status, body, headers = fetch("/admin/export-labels.csv")
         check("labelled CSV returns 200", status == 200 and "Retail and wholesale trade" in body)
+        check("labelled CSV includes the software request", "M-Pesa checkout" in body)
 
         status, body, headers = fetch("/admin/codebook.csv")
         check("codebook returns 200", status == 200 and body.startswith("variable,label,type,values,notes"))
+        check(
+            "codebook documents the software columns",
+            "needs_software" in body and "software_details" in body,
+        )
 
         status, body, headers = fetch("/admin/analysis.sps")
         check("SPSS syntax returns 200", status == 200 and "RELIABILITY" in body)
         check("SPSS syntax has regression block", "/DEPENDENT Y_performance" in body)
+        check("SPSS syntax labels the software question", "needs_software" in body)
 
         status, body, headers = fetch("/health")
         check("health endpoint reports one response", status == 200 and json.loads(body)["responses"] == 1)

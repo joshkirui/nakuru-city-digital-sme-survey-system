@@ -73,6 +73,15 @@ OPEN_COMMENTS = [
     "Keeping the shop and the online page running needs more staff.",
 ]
 
+SOFTWARE_REQUESTS = [
+    "An online ordering page that lists prices and lets customers pay by M-Pesa.",
+    "A simple stock control system to track shop stock and online orders.",
+    "A booking system so customers can reserve items and choose a collection time.",
+    "A customer records and follow-up tool for WhatsApp orders.",
+    "A small dashboard that combines shop sales and mobile money payments.",
+    "A delivery tracking tool for orders outside Nakuru.",
+]
+
 
 def weighted(choices):
     roll = random.random()
@@ -196,13 +205,18 @@ def main() -> None:
             )
             duration = int(max(210, min(1500, random.gauss(640, 190))))
             comment = random.choice(OPEN_COMMENTS) if random.random() < 0.58 else ""
+            needs_software = "yes" if random.random() < 0.34 else "no"
+            software_details = (
+                random.choice(SOFTWARE_REQUESTS) if needs_software == "yes" else ""
+            )
 
             cursor = conn.execute(
                 """
                 INSERT INTO responses
                     (code, created_at, consent, sector, years, employees, role,
-                     location, channels, answers, duration_seconds, open_challenge)
-                VALUES ('', ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     location, channels, answers, duration_seconds, open_challenge,
+                     needs_software, software_details)
+                VALUES ('', ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     stamp.isoformat(timespec="seconds"),
@@ -215,6 +229,8 @@ def main() -> None:
                     json.dumps(answers, sort_keys=True),
                     duration,
                     comment,
+                    needs_software,
+                    software_details,
                 ),
             )
             conn.execute(

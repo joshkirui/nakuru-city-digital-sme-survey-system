@@ -41,6 +41,8 @@ VALUES = {
     "answers": '{"A1": 4}',
     "duration_seconds": 600,
     "open_challenge": "Connectivity",
+    "needs_software": "yes",
+    "software_details": "An online ordering page with M-Pesa checkout.",
 }
 
 
@@ -63,6 +65,11 @@ def test_sqlite() -> None:
         ).fetchone()
         check("sqlite: row is retrievable by code", row is not None)
         check("sqlite: answers round-trip", row["answers"] == VALUES["answers"])
+        check(
+            "sqlite: software branch round-trips",
+            row["needs_software"] == "yes"
+            and row["software_details"] == VALUES["software_details"],
+        )
         count = conn.execute(
             "SELECT COUNT(*) AS total FROM responses"
         ).fetchone()["total"]
@@ -72,6 +79,72 @@ def test_sqlite() -> None:
         conn.close()
         for suffix in ("", "-wal", "-shm"):
             (tmp / f"storage.db{suffix}").unlink(missing_ok=True)
+
+
+def test_sqlite_migration() -> None:
+    """A database created before the software question must gain the columns."""
+    import storage
+
+    tmp = Path(tempfile.mkdtemp(prefix="msme-migration-"))
+    path = tmp / "legacy.db"
+    conn = storage.SQLiteConnection(str(path))
+    try:
+        conn.execute(
+            """
+            CREATE TABLE responses (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                code             TEXT UNIQUE NOT NULL,
+                created_at       TEXT NOT NULL,
+                consent          INTEGER NOT NULL DEFAULT 0,
+                sector           TEXT NOT NULL,
+                years            TEXT NOT NULL,
+                employees        TEXT NOT NULL,
+                role             TEXT NOT NULL,
+                location         TEXT NOT NULL,
+                channels         TEXT NOT NULL,
+                answers          TEXT NOT NULL,
+                duration_seconds INTEGER,
+                open_challenge   TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO responses "
+            "(code, created_at, consent, sector, years, employees, role, "
+            " location, channels, answers) "
+            "VALUES ('NK-0001', '2026-11-17T09:00:00+00:00', 1, 'retail', "
+            "'4to6', '1to9', 'owner', 'cbd', '[\"social\"]', '{\"A1\": 4}')"
+        )
+        conn.commit()
+
+        storage.init_schema(conn)
+        conn.commit()
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(responses)").fetchall()
+        }
+        check(
+            "sqlite: migration adds both software columns",
+            {"needs_software", "software_details"} <= columns,
+            str(sorted(columns)),
+        )
+        old_row = conn.execute(
+            "SELECT * FROM responses WHERE code = ?", ("NK-0001",)
+        ).fetchone()
+        check(
+            "sqlite: existing rows default to no",
+            old_row["needs_software"] == "no" and old_row["software_details"] is None,
+        )
+
+        # Running startup again must not raise a duplicate-column error.
+        storage.init_schema(conn)
+        conn.commit()
+        new_id = storage.insert_response(conn, VALUES)
+        check("sqlite: insert works after migration", new_id == 2, str(new_id))
+    finally:
+        conn.close()
+        for suffix in ("", "-wal", "-shm"):
+            (tmp / f"legacy.db{suffix}").unlink(missing_ok=True)
 
 
 def test_postgres() -> None:
@@ -226,11 +299,27 @@ def test_postgres() -> None:
         "IDENTITY" in storage.POSTGRES_SCHEMA
         and "AUTOINCREMENT" not in storage.POSTGRES_SCHEMA,
     )
+
+    state["calls"].clear()
+    storage.init_schema(conn)
+    alters = [sql for sql, _ in state["calls"] if "ADD COLUMN" in sql]
+    check(
+        "postgres: migration uses IF NOT EXISTS",
+        len(alters) == 2 and all("IF NOT EXISTS" in sql for sql in alters),
+        str(alters),
+    )
+    check(
+        "postgres: migration covers both software columns",
+        any("needs_software" in sql for sql in alters)
+        and any("software_details" in sql for sql in alters),
+        str(alters),
+    )
     conn.close()
 
 
 def main() -> None:
     test_sqlite()
+    test_sqlite_migration()
     test_postgres()
     print()
     if failures:

@@ -25,6 +25,22 @@
     form.querySelectorAll('input[name="channels"]')
   );
   var consent = form.querySelector('input[name="consent"]');
+  var softwareDetails = form.querySelector("[data-software-details]");
+  var softwareRadios = Array.prototype.slice.call(
+    form.querySelectorAll('input[name="needs_software"]')
+  );
+
+  function syncSoftware() {
+    if (!softwareDetails) return;
+    var chosen = null;
+    softwareRadios.forEach(function (input) {
+      if (input.checked) chosen = input.value;
+    });
+    var show = chosen === "yes";
+    softwareDetails.hidden = !show;
+    var textarea = softwareDetails.querySelector("textarea");
+    if (textarea) textarea.required = show;
+  }
 
   function answered() {
     var count = 0;
@@ -40,6 +56,7 @@
   }
 
   function update() {
+    syncSoftware();
     var done = answered();
     var pct = total ? Math.round((100 * done) / total) : 0;
     if (bar) bar.style.width = pct + "%";

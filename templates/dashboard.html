@@ -58,6 +58,11 @@
     <strong>{{ d.comments }}</strong>
     <small>responses with qualitative notes</small>
   </div>
+  <div class="kpi">
+    <span>Software requests</span>
+    <strong>{{ d.software_requests }}</strong>
+    <small>{{ d.software_pct|num(1) }}% asked for software to be developed</small>
+  </div>
 </section>
 
 <div class="card">
@@ -356,6 +361,36 @@
 </div>
 
 <div class="card">
+  <div class="cardhead">
+    <h2>Software development requests</h2>
+    <span class="pill">{{ d.software_requests }} of {{ d.total }}</span>
+  </div>
+  {% if d.software_recent %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Submitted</th><th>Sector</th><th>Software needed</th></tr></thead>
+      <tbody>
+        {% for row in d.software_recent %}
+        <tr>
+          <td><a href="{{ url_for('admin_response', code=row.code) }}">{{ row.code }}</a></td>
+          <td>{{ row.created_at|dt }}</td>
+          <td>{{ row.sector }}</td>
+          <td>{{ row.details }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">
+    Free text supplied by respondents in the final branching question. Treat it as a lead for
+    follow-up, not as part of the quantitative analysis.
+  </p>
+  {% else %}
+  <p class="empty">No respondent has asked for a software solution to be developed yet.</p>
+  {% endif %}
+</div>
+
+<div class="card">
   <div class="cardhead"><h2>Item-level means</h2><span class="pill">descriptives</span></div>
   {% for section in d.sections %}
   <details class="more">
@@ -385,6 +420,7 @@
   <ul class="checks-list">
     <li>{{ d.fast }} response{{ '' if d.fast == 1 else 's' }} completed in under three minutes &mdash; review before analysis.</li>
     <li>{{ d.comments }} response{{ '' if d.comments == 1 else 's' }} include an open-ended comment for thematic coding.</li>
+    <li>{{ d.software_requests }} respondent{{ '' if d.software_requests == 1 else 's' }} asked for a software solution to be developed.</li>
     <li>Median completion time: {{ d.median_seconds|duration }}.</li>
     <li>Every stored record passed server-side validation of consent, demographics and all {{ 36 }} Likert items.</li>
   </ul>

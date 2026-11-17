@@ -3,7 +3,8 @@
 A self-contained web system that operationalises Chapter Three of the research project
 **"E-Commerce and the Performance of Selected Small and Medium Enterprises in Nakuru County, Kenya"**.
 
-It collects the six-section questionnaire anonymously, stores responses under a code, monitors
+It collects the six-section questionnaire anonymously, plus a final branching question on whether
+the business needs software developed, stores responses under a code, monitors
 progress towards the 384-response Cochran sample, computes construct scores and a preliminary
 regression, and exports data that opens directly in SPSS.
 
@@ -78,14 +79,14 @@ python smoke_test.py
 python storage_test.py
 ```
 
-`smoke_test.py` starts the app on a free port with a temporary database and checks 33 behaviours:
-the questionnaire, validation, anonymous code generation, sign-in, dashboard, response register,
-detail view, CSV exports, codebook, SPSS syntax, health check, logout and 404 handling. It leaves
-no files behind.
+`smoke_test.py` starts the app on a free port with a temporary database and checks 46 behaviours:
+the questionnaire, validation (including the software-development branch), anonymous code
+generation, sign-in, dashboard, response register, detail view, CSV exports, codebook, SPSS syntax,
+health check, logout and 404 handling. It leaves no files behind.
 
-`storage_test.py` checks the database adapter: SQLite insert/read/count, plus a simulated
-PostgreSQL driver for placeholder translation, `RETURNING id`, schema dialect and connection
-normalisation. It needs no server and no PostgreSQL package.
+`storage_test.py` checks the database adapter: SQLite insert/read/count and schema migration, plus a
+simulated PostgreSQL driver for placeholder translation, `RETURNING id`, schema dialect and
+connection normalisation. It needs no server and no PostgreSQL package.
 
 ---
 
@@ -95,7 +96,8 @@ normalisation. It needs no server and no PostgreSQL package.
 | --- | --- |
 | Target: SMEs in Nakuru CBD and around Wakulima Market using at least one e-commerce channel | Section A asks for location and channels; a submission without a channel is rejected |
 | Stratified random sampling of 384 respondents, 430 distributed | Dashboard tracks collected vs 384 target and response rate vs 430 |
-| Six-section questionnaire (A background, B online stores, C social commerce, D digital payments, E performance, F challenges) | `questions.py` drives the form: 5 select questions, 1 channel question, 36 Likert items and 1 open question |
+| Six-section questionnaire (A background, B online stores, C social commerce, D digital payments, E performance, F challenges) | `questions.py` drives the form: 5 select questions, 1 channel question, 36 Likert items, 1 open question and a final Yes/No software-development branch |
+| Final branching question: does the business need software developed? | Section G requires Yes or No. Yes reveals a required details box; No finishes the questionnaire and ignores the details |
 | Five-point Likert scales | Agree scale for B, C, D, F; change scale for E |
 | Cronbach's alpha ≥ 0.70 | Computed per construct on the dashboard |
 | `Y = β0 + β1X1 + β2X2 + β3X3 + ε` | Preliminary OLS on the dashboard with B, SE, t, p, R², adjusted R², F and n |
@@ -112,6 +114,7 @@ normalisation. It needs no server and no PostgreSQL package.
 | D. Digital payments | D1–D6 | 1 = strongly disagree … 5 = strongly agree |
 | E. Performance | E1–E8 | 1 = strongly decreased … 5 = strongly increased |
 | F. Challenges | F1–F10 + open question | 1 = strongly disagree … 5 = strongly agree |
+| G. Software development | Yes/No, plus conditional details | nominal / free text |
 
 Items are defined once in `questions.py`. The form, validation, exports, codebook and SPSS
 syntax all read from that file, so editing an item there keeps every output consistent.
@@ -123,9 +126,10 @@ syntax all read from that file, so editing an item there keeps every output cons
 `/admin` shows:
 
 - **KPIs:** collected vs 384, sample progress, response rate vs 430, complete cases, mean
-  completion time, number of open-ended comments.
+  completion time, number of open-ended comments and number of software-development requests.
 - **Sample composition:** sector, location, years trading, employees and respondent role.
 - **Channel use:** online stores, social commerce and digital payments.
+- **Software development requests:** each respondent who chose Yes, with the details they supplied.
 - **Constructs:** n, mean, standard deviation and Cronbach's alpha for X1, X2, X3 and Y.
 - **Correlations:** Pearson matrix for X1–X3 and Y.
 - **Regression:** the Chapter Three model with coefficients, standard errors, t, p, R²,
@@ -151,6 +155,9 @@ read-only detail page that renders the chosen Likert label for every item.
 | Labelled CSV | `nakuru_survey_labelled_YYYY-MM-DD.csv` | Reading in Excel; UTF-8 with BOM |
 | Codebook | `nakuru_codebook.csv` | Variable names, labels, types, value codes and notes |
 | SPSS syntax | `nakuru_analysis.sps` | Variable labels, value labels, descriptives, frequencies, reliability, correlations and regression |
+
+Both CSV files end with `needs_software` (1 = yes, 0 = no in the numeric file; Yes/No in the
+labelled file) and `software_details`. The codebook and SPSS syntax document both variables.
 
 ### SPSS workflow
 
@@ -184,15 +191,20 @@ responses
   answers           JSON object: item code -> 1..5
   duration_seconds  time taken in the browser
   open_challenge    optional free text, limited to 2,000 characters
+  needs_software    yes/no; the final branching question
+  software_details  free text, required when needs_software = yes, limited to 2,000 characters
 ```
+
+New columns are added automatically at startup, so an existing database keeps its responses when
+the questionnaire changes.
 
 Privacy design:
 
 - No name, business name, phone number, email address or IP address is written to the database.
 - The response code is derived from the row number, not from the respondent.
 - Consent is required and recorded.
-- The open-ended answer is free text. Respondents are asked not to include personal details;
-  review comments before publishing quotations.
+- The open-ended answer and the software details are free text. Respondents are asked not to
+  include personal details; review both before publishing quotations or sharing requests.
 - The dashboard reports aggregates only; the register shows codes only.
 - The server access log records IP addresses for each request. For fieldwork, configure the
   reverse proxy or server to discard or rotate logs, or explain their retention in the data
@@ -307,7 +319,7 @@ stats.py             mean, SD, Cronbach alpha, Pearson, t/F p-values, OLS
 storage.py           SQLite/PostgreSQL adapter and schema
 storage_test.py      adapter tests (SQLite and simulated PostgreSQL)
 seed_demo.py         synthetic demo data in a separate database
-smoke_test.py        end-to-end test, 33 checks
+smoke_test.py        end-to-end test, 46 checks
 requirements.txt
 .env.example         documented environment variables (copy to .env locally)
 run_demo.ps1         launch the app against data/demo.db

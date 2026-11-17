@@ -178,6 +178,30 @@ OPEN_QUESTION = {
     "hint": "Optional. Please do not include names, phone numbers or other personal details.",
 }
 
+# Final branching question. "No" finishes the questionnaire; "Yes" reveals a
+# details box that must be completed before the form can be submitted.
+SOFTWARE_QUESTION = {
+    "name": "needs_software",
+    "label": "Does the business need a software solution to be developed?",
+    "hint": (
+        "Choose Yes if the business would like a website, online store, stock system, "
+        "booking system or other software built for it. Choose No to finish the questionnaire."
+    ),
+    "options": [
+        ("yes", "Yes"),
+        ("no", "No"),
+    ],
+    "details_name": "software_details",
+    "details_label": "What should the software do?",
+    "details_hint": (
+        "Describe the problem the software should solve and the features needed. "
+        "Please do not include names, phone numbers or other personal details."
+    ),
+    "details_max": 2000,
+}
+
+SOFTWARE_LABELS = dict(SOFTWARE_QUESTION["options"])
+
 CHANNEL_LABELS = {
     "online_store": "Online store",
     "social": "Social commerce",

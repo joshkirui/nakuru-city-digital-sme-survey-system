@@ -20,6 +20,7 @@
   <div class="kpi"><span>Years trading</span><strong class="small">{{ r.years }}</strong></div>
   <div class="kpi"><span>Employees</span><strong class="small">{{ r.employees }}</strong></div>
   <div class="kpi"><span>Respondent</span><strong class="small">{{ r.role }}</strong></div>
+  <div class="kpi"><span>Software</span><strong class="small">{{ 'Yes' if r.needs_software == 'yes' else ('No' if r.needs_software == 'no' else '-') }}</strong></div>
   <div class="kpi"><span>Duration</span><strong class="small">{{ r.duration_seconds|duration }}</strong></div>
 </section>
 
@@ -59,6 +60,23 @@
   </div>
 </div>
 {% endfor %}
+
+<div class="card">
+  <div class="cardhead"><h2>Software development request</h2></div>
+  {% if r.needs_software == 'yes' %}
+  <p><span class="chip">Yes</span> The respondent asked for a software solution to be developed.</p>
+  {% if r.software_details %}
+  <blockquote class="quote">{{ r.software_details }}</blockquote>
+  {% else %}
+  <p class="empty">No details were provided.</p>
+  {% endif %}
+  {% elif r.needs_software == 'no' %}
+  <p><span class="chip">No</span> The respondent does not need a software solution to be developed.</p>
+  {% else %}
+  <p class="empty">This question was not answered.</p>
+  {% endif %}
+  <p class="hint">This answer is a follow-up lead. It is kept out of the construct scores and regression.</p>
+</div>
 
 <div class="card">
   <div class="cardhead"><h2>Open-ended response</h2></div>

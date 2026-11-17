@@ -51,6 +51,8 @@ COLUMNS = (
     "answers",
     "duration_seconds",
     "open_challenge",
+    "needs_software",
+    "software_details",
 )
 
 SQLITE_SCHEMA = """
@@ -67,7 +69,9 @@ CREATE TABLE IF NOT EXISTS responses (
     channels         TEXT NOT NULL,
     answers          TEXT NOT NULL,
     duration_seconds INTEGER,
-    open_challenge   TEXT
+    open_challenge   TEXT,
+    needs_software   TEXT NOT NULL DEFAULT 'no',
+    software_details TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_responses_created
     ON responses (created_at);
@@ -87,11 +91,20 @@ CREATE TABLE IF NOT EXISTS responses (
     channels         TEXT NOT NULL,
     answers          TEXT NOT NULL,
     duration_seconds INTEGER,
-    open_challenge   TEXT
+    open_challenge   TEXT,
+    needs_software   TEXT NOT NULL DEFAULT 'no',
+    software_details TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_responses_created
     ON responses (created_at);
 """
+
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS does not
+# alter an existing table, so these are applied explicitly at startup.
+MIGRATIONS = (
+    ("needs_software", "TEXT NOT NULL DEFAULT 'no'"),
+    ("software_details", "TEXT"),
+)
 
 
 # Parameters added by ORMs/poolers that libpq does not understand. Supabase's
@@ -222,6 +235,32 @@ def init_schema(conn) -> None:
     conn.executescript(
         POSTGRES_SCHEMA if conn.backend == "postgres" else SQLITE_SCHEMA
     )
+    migrate_schema(conn)
+
+
+def migrate_schema(conn) -> None:
+    """Add columns introduced after a database was first created.
+
+    ``CREATE TABLE IF NOT EXISTS`` leaves an existing table untouched, so a
+    deployment that predates the software-development question would fail on
+    the first insert. PostgreSQL's ``IF NOT EXISTS`` is safe when several
+    serverless instances start at the same time; SQLite checks the catalog
+    first because it does not support that clause.
+    """
+    if conn.backend == "postgres":
+        for column, definition in MIGRATIONS:
+            conn.execute(
+                f"ALTER TABLE responses ADD COLUMN IF NOT EXISTS {column} {definition}"
+            )
+        return
+
+    present = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(responses)").fetchall()
+    }
+    for column, definition in MIGRATIONS:
+        if column not in present:
+            conn.execute(f"ALTER TABLE responses ADD COLUMN {column} {definition}")
 
 
 def insert_response(conn, values: Mapping[str, Any]) -> int:

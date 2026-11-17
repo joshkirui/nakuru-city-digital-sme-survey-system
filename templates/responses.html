@@ -42,7 +42,7 @@
       <thead>
         <tr>
           <th>Code</th><th>Submitted (EAT)</th><th>Sector</th><th>Location</th>
-          <th>Channels</th><th class="right">Y</th><th class="right">Duration</th>
+          <th>Channels</th><th>Software</th><th class="right">Y</th><th class="right">Duration</th>
         </tr>
       </thead>
       <tbody>
@@ -53,6 +53,7 @@
           <td>{{ row.sector }}</td>
           <td>{{ row.location }}</td>
           <td>{% for channel in row.channels %}<span class="chip">{{ channel }}</span>{% endfor %}</td>
+          <td>{{ 'Yes' if row.needs_software == 'yes' else 'No' }}</td>
           <td class="right">{{ row.y|num(2) }}</td>
           <td class="right">{{ row.duration|duration }}</td>
         </tr>

@@ -57,6 +57,9 @@ BASE = Path(__file__).resolve().parent
 EAT = timezone(timedelta(hours=3), name="EAT")
 ADMIN_TIMEOUT = 30 * 60  # seconds of inactivity before the admin session expires
 DEFAULT_PASSWORD = "nakuru2026"
+# 36 Likert items, 5 demographic selects, channels, consent and the final
+# software-development yes/no question. Conditional details are not counted.
+TOTAL_FIELDS = len(q.ALL_ITEMS) + 5 + 1 + 1 + 1
 
 
 # --------------------------------------------------------------------------- app
@@ -297,6 +300,8 @@ def fetch_responses() -> list[dict]:
                 "answers": answers,
                 "duration_seconds": row["duration_seconds"],
                 "open_challenge": row["open_challenge"] or "",
+                "needs_software": row["needs_software"] or "",
+                "software_details": row["software_details"] or "",
             }
         )
     return out
@@ -368,6 +373,26 @@ def parse_submission(form) -> tuple[dict, list[str], set[str]]:
         )
         missing.update(unanswered)
 
+    software_choice = (form.get(q.SOFTWARE_QUESTION["name"]) or "").strip().lower()
+    software_details = (
+        form.get(q.SOFTWARE_QUESTION["details_name"]) or ""
+    ).strip()
+    if software_choice not in q.SOFTWARE_LABELS:
+        errors.append(
+            "Please answer: Does the business need a software solution to be developed?"
+        )
+        missing.add(q.SOFTWARE_QUESTION["name"])
+    if software_choice == "yes" and not software_details:
+        errors.append(
+            "Please describe the software the business needs, or choose No."
+        )
+        missing.add(q.SOFTWARE_QUESTION["details_name"])
+    if software_choice == "no":
+        # "No" ends the questionnaire; ignore any text left in the hidden box.
+        software_details = ""
+    if len(software_details) > q.SOFTWARE_QUESTION["details_max"]:
+        software_details = software_details[: q.SOFTWARE_QUESTION["details_max"]]
+
     duration = None
     raw_duration = (form.get("duration_seconds") or "").strip()
     if raw_duration.isdigit():
@@ -385,6 +410,8 @@ def parse_submission(form) -> tuple[dict, list[str], set[str]]:
         "answers": answers,
         "duration_seconds": duration,
         "open_challenge": open_text,
+        "needs_software": software_choice,
+        "software_details": software_details,
     }
     return payload, errors, missing
 
@@ -603,6 +630,19 @@ def build_dashboard() -> dict:
             }
         )
 
+    software_requests = [
+        row for row in responses if row["needs_software"] == "yes"
+    ]
+    software_recent = [
+        {
+            "code": row["code"],
+            "created_at": row["created_at"],
+            "sector": q.SECTOR_LABELS.get(row["sector"], row["sector"]),
+            "details": row["software_details"],
+        }
+        for row in reversed(software_requests[-8:])
+    ]
+
     channels = [
         {
             "key": key,
@@ -627,6 +667,9 @@ def build_dashboard() -> dict:
         "median_seconds": median,
         "fast": sum(1 for value in durations if value < 180),
         "comments": sum(1 for r in responses if r["open_challenge"]),
+        "software_requests": len(software_requests),
+        "software_pct": (100 * len(software_requests) / total) if total else 0.0,
+        "software_recent": software_recent,
         "first": fmt_dt(responses[0]["created_at"]) if responses else None,
         "last": fmt_dt(responses[-1]["created_at"]) if responses else None,
         "composition": {
@@ -670,6 +713,7 @@ def export_fieldnames() -> list[str]:
     ]
     names += q.ALL_ITEMS
     names += ["X1_online", "X2_social", "X3_payments", "Y_performance", "CH_mean", "open_challenge"]
+    names += ["needs_software", "software_details"]
     return names
 
 
@@ -700,6 +744,8 @@ def numeric_csv(responses: list[dict]) -> str:
             for key in ("X1", "X2", "X3", "Y", "CH")
         ]
         values.append(row["open_challenge"])
+        values.append(1 if row["needs_software"] == "yes" else 0)
+        values.append(row["software_details"])
         writer.writerow(values)
     return buffer.getvalue()
 
@@ -723,6 +769,7 @@ def labelled_csv(responses: list[dict]) -> str:
         ]
         + q.ALL_ITEMS
         + ["X1_online", "X2_social", "X3_payments", "Y_performance", "CH_mean", "open_challenge"]
+        + ["needs_software", "software_details"]
     )
     for row in responses:
         scores = construct_scores(row)
@@ -743,6 +790,8 @@ def labelled_csv(responses: list[dict]) -> str:
             + [row["answers"].get(code, "") for code in q.ALL_ITEMS]
             + [round(scores[key], 2) if key in scores else "" for key in ("X1", "X2", "X3", "Y", "CH")]
             + [row["open_challenge"]]
+            + [q.SOFTWARE_LABELS.get(row["needs_software"], row["needs_software"])]
+            + [row["software_details"]]
         )
     return buffer.getvalue()
 
@@ -790,6 +839,11 @@ def codebook_csv() -> str:
                      f"Mean of {', '.join(f'F{i}' for i in range(1, 11))}"])
     writer.writerow(["open_challenge", "Most serious challenge (open-ended)",
                      "String", "Free text", "Optional; respondent advised not to give personal details"])
+    writer.writerow(["needs_software", "Needs a software solution developed", "Dichotomous",
+                     "1 = yes; 0 = no", "Final branching question; No ends the questionnaire"])
+    writer.writerow(["software_details", "Software requirements described by the respondent",
+                     "String", "Free text",
+                     "Required when needs_software = 1; limited to 2,000 characters"])
 
     return buffer.getvalue()
 
@@ -833,6 +887,8 @@ def sps_syntax() -> str:
         ("X3_payments", "Digital payment systems composite (mean of D1 to D6)"),
         ("Y_performance", "SME performance composite (mean of E1 to E8)"),
         ("CH_mean", "Challenges composite (mean of F1 to F10)"),
+        ("needs_software", "Needs a software solution developed"),
+        ("software_details", "Software requirements (free text)"),
     ]
     for name, label in entries:
         lines.append(f"    {name} {quote}{clean(label)}{quote}")
@@ -849,6 +905,7 @@ def sps_syntax() -> str:
         lines.append(f"    {field['name']} {values}")
     for name in ("ch_online_store", "ch_social", "ch_payments"):
         lines.append(f"    {name} 1 {quote}Yes{quote} 0 {quote}No{quote}")
+    lines.append(f"    needs_software 1 {quote}Yes{quote} 0 {quote}No{quote}")
     lines += [".", "EXECUTE.", ""]
 
     lines += [
@@ -856,7 +913,7 @@ def sps_syntax() -> str:
         "  /STATISTICS=MEAN STDDEV MIN MAX.",
         "",
         "FREQUENCIES VARIABLES=sector years employees role location",
-        "  ch_online_store ch_social ch_payments",
+        "  ch_online_store ch_social ch_payments needs_software",
         "  /ORDER=ANALYSIS.",
         "",
         "CORRELATIONS",
@@ -963,12 +1020,13 @@ def register_routes(app: Flask) -> None:
             channels_field=channel_field(),
             sections=q.SECTIONS,
             open_question=q.OPEN_QUESTION,
+            software_question=q.SOFTWARE_QUESTION,
             form={},
             chosen_channels=[],
             missing_items=set(),
             missing_fields=set(),
             errors=[],
-            total_fields=len(q.ALL_ITEMS) + 5 + 1 + 1,
+            total_fields=TOTAL_FIELDS,
         )
 
     @app.post("/survey")
@@ -982,12 +1040,13 @@ def register_routes(app: Flask) -> None:
                     channels_field=channel_field(),
                     sections=q.SECTIONS,
                     open_question=q.OPEN_QUESTION,
+                    software_question=q.SOFTWARE_QUESTION,
                     form=request.form,
                     chosen_channels=request.form.getlist("channels"),
                     missing_items=missing,
                     missing_fields=missing,
                     errors=errors,
-                    total_fields=len(q.ALL_ITEMS) + 5 + 1 + 1,
+                    total_fields=TOTAL_FIELDS,
                 ),
                 200,
             )
@@ -1009,6 +1068,8 @@ def register_routes(app: Flask) -> None:
                     "answers": json.dumps(payload["answers"], sort_keys=True),
                     "duration_seconds": payload["duration_seconds"],
                     "open_challenge": payload["open_challenge"],
+                    "needs_software": payload["needs_software"],
+                    "software_details": payload["software_details"],
                 },
             )
             code = f"NK-{response_id:04d}"
@@ -1111,6 +1172,7 @@ def register_routes(app: Flask) -> None:
                     "channels": [q.CHANNEL_LABELS[c] for c in row["channels"] if c in q.CHANNEL_LABELS],
                     "duration": row["duration_seconds"],
                     "y": scores.get("Y"),
+                    "needs_software": row["needs_software"],
                 }
             )
 
@@ -1152,6 +1214,8 @@ def register_routes(app: Flask) -> None:
             "channels": [q.CHANNEL_LABELS[c] for c in channels if c in q.CHANNEL_LABELS],
             "answers": answers,
             "open_challenge": row["open_challenge"] or "",
+            "needs_software": row["needs_software"] or "",
+            "software_details": row["software_details"] or "",
         }
         scale_maps = {section["id"]: dict(section["scale"]) for section in q.SECTIONS}
         return render_template(

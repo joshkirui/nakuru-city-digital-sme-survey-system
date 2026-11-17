@@ -95,10 +95,24 @@ def runtime_db_path() -> Path:
     disposable. That is acceptable for a preview, never for fieldwork.
     """
     configured = os.environ.get("MSME_DB")
+    if os.environ.get("VERCEL"):
+        tmp = Path(tempfile.gettempdir()).resolve()
+        if configured:
+            candidate = Path(configured)
+            try:
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                candidate.resolve().relative_to(tmp)
+                return candidate
+            except (OSError, ValueError):
+                print(
+                    f"warning: MSME_DB={configured} is not inside {tmp}, the "
+                    "only writable location on Vercel; using a temporary "
+                    "database instead.",
+                    file=sys.stderr,
+                )
+        return tmp / "survey.db"
     if configured:
         return Path(configured)
-    if os.environ.get("VERCEL"):
-        return Path(tempfile.gettempdir()) / "survey.db"
     return BASE / "data" / "survey.db"
 
 
